@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Dict, Any
 from authentication import get_current_user, supabase
 
-app = FastAPI(title="Project Insight")
+app = FastAPI()
 
 # --- Schemas ---
 class UserProfile(BaseModel):
@@ -81,6 +81,7 @@ def search_doctors(query: str):
    response=(supabase.table("profiles").select("id","name","role").eq("role","doctor").execute())
 
    return response.data
+
 
 
 
