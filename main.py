@@ -147,6 +147,7 @@ def get_patient_history(
         .execute()
     )
 
+    print(resp.data)
     return resp.data
 
 
@@ -209,6 +210,7 @@ def grant_history_access(
     }).execute()
 
     return {"status": "history access granted"}
+
 
 
 
