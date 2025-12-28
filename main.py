@@ -221,34 +221,5 @@ def grant_history_access(
 
     return {"status": "history access granted"}
 
-@app.get("/history/{patient_id}")
-def get_patient_history(
-    patient_id: str,
-    user: Dict[str, Any] = Depends(get_current_user)
-):
-    supabase = get_user_supabase(user["token"])
-    doctor_id = user["user_id"]
 
-    profile = (
-        supabase
-        .table("profiles")
-        .select("role")
-        .eq("id", doctor_id)
-        .execute()
-    )
-
-    if not profile.data or profile.data[0]["role"] != "doctor":
-        raise HTTPException(status_code=403, detail="Doctors only")
-
-    # 🔓 TEMPORARY: no access table check
-    resp = (
-        supabase
-        .table("prescriptions")
-        .select("*")
-        .eq("patient_id", patient_id)
-        .order("created_at", desc=True)
-        .execute()
-    )
-
-    return resp.data
 
