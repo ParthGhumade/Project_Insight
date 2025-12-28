@@ -1,67 +1,111 @@
-import os
-from typing import Dict, Any, Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from supabase import create_client, Client
-from dotenv import load_dotenv
+# authentication.py
 
-# Load environment variables
+import os
+from dotenv import load_dotenv
+from supabase import create_client, Client, ClientOptions
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, status
+from typing import Dict, Any
+
 load_dotenv()
 
-# --- Configuration ---
-# Fail closed if credentials are missing
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-# Prefer SUPABASE_ANON_KEY, fallback to SUPABASE_KEY for backward compatibility
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_KEY")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
-if not SUPABASE_URL:
-    raise RuntimeError("Critical: SUPABASE_URL is not set in environment variables.")
+# ---------------------------
+# Supabase helpers (FIRST)
+# ---------------------------
 
-if not SUPABASE_ANON_KEY:
-    raise RuntimeError("Critical: SUPABASE_ANON_KEY (or SUPABASE_KEY) is not set in environment variables.")
+def get_user_supabase(token: str) -> Client:
+    return create_client(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+        options=ClientOptions(
+            headers={
+                "Authorization": f"Bearer {token}"
+            }
+        )
+    )
 
-# --- Supabase Client ---
-# Initialize with the anon key. This client is safe for client-side operations 
-# and respects Row Level Security (RLS).
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+# ---------------------------
+# Base client (optional)
+# ---------------------------
 
-# --- Authentication Logic ---
+supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
 security = HTTPBearer()
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
-    """
-    Validates the Bearer token using Supabase Auth.
-    
-    Returns:
-        A dictionary containing minimal user info (id, email) if valid.
-        
-    Raises:
-        HTTPException(401): If the token is invalid, expired, or missing.
-    """
+# ---------------------------
+# Authentication dependency
+# ---------------------------
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> Dict[str, Any]:
+
     token = credentials.credentials
-    
-    try:
-        # get_user() validates the JWT signature and expiration against the project's secret
-        user_response = supabase.auth.get_user(token)
-        
-        if not user_response or not user_response.user:
-            raise ValueError("No user returned from Supabase")
-            
-        user = user_response.user
-        
-        # Return minimal user object as requested
-        return {
-            "user_id": user.id,
-            "email": user.email
-        }
-        
-    except Exception as e:
-        # Log the error internally if needed (print for now, replace with logger later)
-        print(f"Authentication Failed: {str(e)}")
-        
-        # Fail closed with generic message
+
+    # FIX: Call the function to get the client
+    supabase_client = get_user_supabase(token)
+    user_response = supabase_client.auth.get_user(token)
+
+    if not user_response or not user_response.user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
-            headers={"WWW-Authenticate": "Bearer"},
         )
+
+    user = user_response.user
+
+    return {
+        "user_id": user.id,
+        "email": user.email,
+        "token": token
+    }
+
+    
+#---------------------------
+#     Authorisation Logic    
+#---------------------------
+
+def get_role(credentials: HTTPAuthorizationCredentials=Depends(security)):
+
+    token=credentials.credentials
+    # FIX: Call the function to get the client
+    supabase_client = get_user_supabase(token)
+    auth_user=supabase_client.auth.get_user(token)
+    
+    if not auth_user:
+        raise HTTPException(status_code=401,detail="Invalid Token")
+    
+    user_id=auth_user.user.id
+
+    # FIX: Use the client instance
+    profile=(supabase_client.table("profiles").select("role").eq("id",user_id).single().execute())
+
+    if not profile.data:
+        raise HTTPException( status_code=403,detail="Profile Not Found")
+    
+
+
+    return{
+            "id": user_id,
+            "role":profile.data["role"]
+    }
+
+
+def require_doctor(user=Depends(get_role)):
+    
+    if user["role"]!="doctor":
+        raise HTTPException(status_code=403,detail="Doctor Access Required")
+    
+
+    return user
+
+def require_patient(user=Depends(get_role)):
+    
+    if user["role"]!="patient":
+        raise HTTPException(status_code=403,detail="Patient Access Required")
+    
+
+    return user
