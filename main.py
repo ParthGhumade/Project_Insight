@@ -137,28 +137,17 @@ def get_patient_history(
     user: Dict[str, Any] = Depends(get_current_user)
 ):
     supabase = get_user_supabase(user["token"])
-    doctor_id = user["user_id"]
 
-    profile = (
-        supabase
-        .table("profiles")
-        .select("role")
-        .eq("id", doctor_id)
-        .execute()
-    )
-
-    if not profile.data or profile.data[0]["role"] != "doctor":
-        raise HTTPException(status_code=403, detail="Doctors only")
-
-    return (
+    resp = (
         supabase
         .table("prescriptions")
         .select("*")
         .eq("patient_id", patient_id)
         .order("created_at", desc=True)
         .execute()
-        .data
     )
+
+    return resp.data
 
 
 
@@ -220,6 +209,7 @@ def grant_history_access(
     }).execute()
 
     return {"status": "history access granted"}
+
 
 
 
