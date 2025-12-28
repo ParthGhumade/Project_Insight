@@ -150,6 +150,31 @@ def get_patient_history(
     print(resp.data)
     return resp.data
 
+@app.get("/history/doctor/{doctor_id}")
+def get_doctor_prescription_history(
+    doctor_id: str,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    supabase = get_user_supabase(user["token"])
+
+    # 🔒 Optional safety check (can remove if you want it fully open for now)
+    # Ensures a doctor can only view their own prescriptions
+    if user["user_id"] != doctor_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own prescription history"
+        )
+
+    resp = (
+        supabase
+        .table("prescriptions")
+        .select("*")
+        .eq("doctor_id", doctor_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    return resp.data
 
 
 # -----------------------------
@@ -210,6 +235,7 @@ def grant_history_access(
     }).execute()
 
     return {"status": "history access granted"}
+
 
 
 
