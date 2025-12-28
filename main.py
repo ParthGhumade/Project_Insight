@@ -1,88 +1,254 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException,Query
 from pydantic import BaseModel
-from typing import Dict, Any
-from authentication import get_current_user, supabase
+from typing import Dict, Any, List
+from authentication import get_current_user, get_user_supabase
+from datetime import datetime, timezone
 
-app = FastAPI()
 
-# --- Schemas ---
+app = FastAPI(title="Project Insight")
+
+# -----------------------------
+# Schemas
+# -----------------------------
+
 class UserProfile(BaseModel):
     id: str
-    name: str # From profiles table
-    role: str # From profiles table
-    email: str # From auth
+    name: str
+    role: str
+    email: str
 
-# --- Endpoints ---
 
-@app.get("/me", response_model=UserProfile)
-def get_current_user_profile(user: Dict[str, Any] = Depends(get_current_user)):
-    """
-    Fetches the current authenticated user's profile.
-    Combines auth info (email) with profile info (name, role).
-    """
+class Medicine(BaseModel):
+    name: str
+    brand: str
+    frequency: str
+    duration: str
 
-    # Extract auth info
-    user_id = user.get("user_id")
-    email = user.get("email")
 
-    print("=== /me endpoint called ===")
-    print("Auth user_id:", user_id)
-    print("Auth email:", email)
+class PrescriptionContent(BaseModel):
+    medicines: List[Medicine]
+    follow_up_date: str
+    notes: str
 
-    if not user_id:
-        print("ERROR: user_id missing from auth payload")
-        raise HTTPException(status_code=401, detail="Invalid auth payload")
 
-    try:
-        # IMPORTANT: .single() MUST be inside try
-        response = (
-            supabase
-            .table("profiles")
-            .select("id, name, role")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
+class PrescriptionCreate(BaseModel):
+    patient_id: str
+    content: PrescriptionContent
 
-        print("Supabase raw response:", response)
+class GrantHistoryAccess(BaseModel):
+    doctor_id: str
+    expires_at: str
 
-        data = response.data
-        print("Profile data fetched:", data)
+# -----------------------------
+# Health
+# -----------------------------
 
-        return UserProfile(
-            id=data["id"],
-            name=data["name"],
-            role=data["role"],
-            email=email
-        )
-
-    except Exception as e:
-        print("Profile Fetch Error:", e)
-        print("Failed user_id:", user_id)
-
-        raise HTTPException(
-            status_code=404,
-            detail="User profile not found"
-        )
-
-#-----------------------------
-# Server health
-#-----------------------------
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-#-----------------------------
-# Search doctors
-#-----------------------------
-@app.get("/doctors/search")
-def search_doctors(query: str):
-   
-   response=(supabase.table("profiles").select("id","name","role").eq("role","doctor").execute())
 
-   return response.data
+# -----------------------------
+# Current user profile
+# -----------------------------
+
+@app.get("/me", response_model=UserProfile)
+def get_current_user_profile(
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    print("AUTH USER PAYLOAD:", user)
+
+    user_supabase = get_user_supabase(user["token"])
+
+    response = (
+    user_supabase
+    .table("profiles")
+    .select("id, name, role")
+    .eq("id", user["user_id"])
+    .execute()
+    )
+
+    print("DATA:", response.data)
+    # Changed to print full response for debugging as .error attribute does not exist
+    print("FULL RESPONSE:", response)
 
 
 
 
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    data = response.data[0]
+
+    return UserProfile(
+        id=data["id"],
+        name=data["name"],
+        role=data["role"],
+        email=user["email"]
+    )
+
+
+# -----------------------------
+# Search patients
+# -----------------------------
+
+@app.get("/patients/search")
+def search_patients(
+    q: str = Query(..., min_length=2),
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    user_supabase = get_user_supabase(user["token"])
+    user_id = user["user_id"]
+
+    # Ensure caller is a doctor
+    profile = (
+        user_supabase
+        .table("profiles")
+        .select("role")
+        .eq("id", user_id)
+        .execute()
+    )
+
+    if not profile.data or profile.data[0]["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+
+
+    resp = (
+        user_supabase
+        .table("profiles")
+        .select("id, name")
+        .eq("role", "patient")
+        .ilike("name", f"%{q}%")
+        .execute()
+    )
+
+    return resp.data
+
+
+
+# -----------------------------
+# Fetch prescription
+# -----------------------------
+
+
+@app.get("/history/{patient_id}")
+def get_patient_history(
+    patient_id: str,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    supabase = get_user_supabase(user["token"])
+    doctor_id = user["user_id"]
+
+    profile = (
+        supabase
+        .table("profiles")
+        .select("role")
+        .eq("id", doctor_id)
+        .execute()
+    )
+
+    if not profile.data or profile.data[0]["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+
+    return (
+        supabase
+        .table("prescriptions")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
+
+
+
+# -----------------------------
+# Create prescriptions
+# -----------------------------
+
+@app.post("/prescriptions")
+def create_prescription(
+    data: PrescriptionCreate,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    user_supabase = get_user_supabase(user["token"])
+    doctor_id = user["user_id"]
+
+    doctor_profile = (
+        user_supabase
+        .table("profiles")
+        .select("name")
+        .eq("id", doctor_id)
+        .execute()
+    )
+
+    if not doctor_profile.data:
+        raise HTTPException(status_code=403, detail="Doctor profile not found")
+
+    user_supabase.table("prescriptions").insert({
+        "doctor_id": doctor_id,
+        "doctor_name": doctor_profile.data[0]["name"],
+        "patient_id": data.patient_id,
+        "content": data.model_dump()
+    }).execute()
+
+    return {
+        "status": "success",
+        "message": "Prescription created successfully"
+    }
+
+# -----------------------------
+# prescription access
+# -----------------------------
+
+@app.post("/prescriptions/grant-access")
+def grant_history_access(
+    payload: GrantHistoryAccess,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    user_supabase = get_user_supabase(user["token"])
+    patient_id = user["user_id"]
+
+    print("AUTH USER:", user["user_id"])
+    print("INSERT patient_id:", user["user_id"])
+
+
+    user_supabase.table("prescription_access").insert({
+        "patient_id": patient_id,
+        "doctor_id": payload.doctor_id,
+        "expires_at": payload.expires_at
+    }).execute()
+
+    return {"status": "history access granted"}
+
+@app.get("/history/{patient_id}")
+def get_patient_history(
+    patient_id: str,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    supabase = get_user_supabase(user["token"])
+    doctor_id = user["user_id"]
+
+    profile = (
+        supabase
+        .table("profiles")
+        .select("role")
+        .eq("id", doctor_id)
+        .execute()
+    )
+
+    if not profile.data or profile.data[0]["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+
+    # 🔓 TEMPORARY: no access table check
+    resp = (
+        supabase
+        .table("prescriptions")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    return resp.data
 
