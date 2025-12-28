@@ -12,6 +12,9 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
+if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    raise RuntimeError("SUPABASE_URL or SUPABASE_ANON_KEY is missing")
+    
 # ---------------------------
 # Supabase helpers (FIRST)
 # ---------------------------
@@ -31,9 +34,8 @@ def get_user_supabase(token: str) -> Client:
 # Base client (optional)
 # ---------------------------
 
-supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 # ---------------------------
 # Authentication dependency
@@ -109,3 +111,4 @@ def require_patient(user=Depends(get_role)):
     
 
     return user
+
