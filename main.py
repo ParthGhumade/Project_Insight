@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException,Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List
 from authentication import get_current_user, get_user_supabase
@@ -6,6 +7,14 @@ from datetime import datetime, timezone
 
 
 app = FastAPI(title="Project Insight")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -----------------------------
 # Schemas
