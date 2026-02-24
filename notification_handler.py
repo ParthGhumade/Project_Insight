@@ -3,8 +3,12 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from typing import Dict, Any
+import firebase_admin
 from firebase_admin import messaging
 from authentication import get_current_user, get_user_supabase
+
+if not firebase_admin._apps:
+    firebase_admin.initialize_app()
 
 router = APIRouter(prefix="/fcm", tags=["fcm"])
 
