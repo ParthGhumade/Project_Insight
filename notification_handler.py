@@ -16,8 +16,8 @@ class FcmTokenCreate(BaseModel):
 
 @router.post("/register")
 async def register_fcm_token(
-    payload: FcmTokenCreate,
-    user: Dict[str, Any] = Depends(get_current_user)
+    fcm_token: str,
+    user: uuid = Depends(get_current_user)
 ):
     supabase = get_user_supabase(user["token"])
     
@@ -26,8 +26,8 @@ async def register_fcm_token(
         existing = (
             supabase.table("fcm_tokens")
             .select("*")
-            .eq("user_id", payload.user_id)
-            .eq("fcm_token", payload.fcm_token)
+            .eq("user_id", user)
+            .eq("fcm_token", fcm_token)
             .execute()
         )
         if existing.data:
@@ -37,8 +37,8 @@ async def register_fcm_token(
         response = (
             supabase.table("fcm_tokens")
             .insert({
-                "user_id": payload.user_id,
-                "fcm_token": payload.fcm_token
+                "user_id": user,
+                "fcm_token": fcm_token
             })
             .execute()
         )
