@@ -17,7 +17,7 @@ class FcmTokenCreate(BaseModel):
 @router.post("/register")
 async def register_fcm_token(
     fcm_token: str,
-    user: uuid = Depends(get_current_user)
+    user: str = Depends(get_current_user)
 ):
     supabase = get_user_supabase(user["token"])
     
