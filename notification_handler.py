@@ -17,7 +17,7 @@ class FcmTokenCreate(BaseModel):
 @router.post("/register")
 async def register_fcm_token(
     fcm_token: str,
-    user: str = Depends(get_current_user)
+    user: Dict[str, Any] = Depends(get_current_user)
 ):
     supabase = get_user_supabase(user["token"])
     
@@ -26,7 +26,7 @@ async def register_fcm_token(
         existing = (
             supabase.table("fcm_tokens")
             .select("*")
-            .eq("user_id", user)
+            .eq("user_id", user["user_id"])
             .eq("fcm_token", fcm_token)
             .execute()
         )
@@ -37,7 +37,7 @@ async def register_fcm_token(
         response = (
             supabase.table("fcm_tokens")
             .insert({
-                "user_id": user,
+                "user_id": user["user_id"],
                 "fcm_token": fcm_token
             })
             .execute()
@@ -58,9 +58,9 @@ class NotificationPayload(BaseModel):
 async def send_notification(
     title: str,
     body: str,
-    user: Dict[str, Any] = Depends(get_current_user)
-    
-    ):
+    user_ids: list[str],
+    user: Dict[str, Any]
+):
     supabase = get_user_supabase(user["token"])
     
     try:
@@ -68,7 +68,7 @@ async def send_notification(
         response = (
             supabase.table("fcm_tokens")
             .select("fcm_token")
-            .in_("user_id", payload.user_ids)
+            .in_("user_id", user_ids)
             .execute()
         )
         
@@ -80,8 +80,8 @@ async def send_notification(
         # Create multicast message
         message = messaging.MulticastMessage(
             notification=messaging.Notification(
-                title=payload.title,
-                body=payload.body,
+                title=title,
+                body=body,
             ),
             tokens=tokens
         )

@@ -230,6 +230,7 @@ async def create_prescription(
         await send_notification(
             title="New Prescription Received",
             body=f"Dr. {doctor_name} has just uploaded a new prescription for you. Please check the history tab.",
+            user_ids=[data.patient_id],
             user=user
         )
     except Exception as e:
