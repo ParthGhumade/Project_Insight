@@ -9,7 +9,7 @@ from authentication import get_current_user, get_user_supabase
 import firebase_admin
 from firebase_admin import credentials
 
-cred = credentials.Certificate("google-services.json")
+cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred)
 
 if not firebase_admin._apps:
