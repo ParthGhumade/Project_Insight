@@ -208,6 +208,41 @@ def get_doctor_prescription_history(
 
 
 # -----------------------------
+# Doctor's own prescriptions
+# -----------------------------
+
+@app.get("/prescriptions/mine")
+def get_my_prescriptions(
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    supabase = get_user_supabase(user["token"])
+    doctor_id = user["user_id"]
+
+    # Ensure caller is a doctor
+    profile = (
+        supabase
+        .table("profiles")
+        .select("role")
+        .eq("id", doctor_id)
+        .execute()
+    )
+
+    if not profile.data or profile.data[0]["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+
+    resp = (
+        supabase
+        .table("prescriptions")
+        .select("*")
+        .eq("doctor_id", doctor_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+
+    return {"data": resp.data}
+
+
+# -----------------------------
 # Create prescriptions
 # -----------------------------
 
