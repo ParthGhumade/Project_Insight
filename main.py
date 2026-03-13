@@ -108,51 +108,22 @@ def get_current_user_profile(
 
 @app.get("/patients/search")
 def search_patients(
-    q: str = Query(..., min_length=2),
+    q: str = Query(None),
     user: Dict[str, Any] = Depends(get_current_user)
 ):
     user_supabase = get_user_supabase(user["token"])
-    user_id = user["user_id"]
 
-    # Ensure caller is a doctor
-    profile = (
-        user_supabase
-        .table("profiles")
-        .select("role")
-        .eq("id", user_id)
-        .execute()
-    )
-
-    if not profile.data or profile.data[0]["role"] != "doctor":
-        raise HTTPException(status_code=403, detail="Doctors only")
-
-    # Get patient IDs who have granted access to this doctor
-    now_iso = datetime.now(timezone.utc).isoformat()
-    access_resp = (
-        user_supabase
-        .table("prescription_access")
-        .select("patient_id")
-        .eq("doctor_id", user_id)
-        .gte("expires_at", now_iso)
-        .execute()
-    )
-
-    if not access_resp.data:
-        return []
-
-    # Extract unique patient IDs
-    patient_ids = list(set([row["patient_id"] for row in access_resp.data]))
-
-    resp = (
+    query = (
         user_supabase
         .table("profiles")
         .select("id, name")
         .eq("role", "patient")
-        .in_("id", patient_ids)
-        .ilike("name", f"%{q}%")
-        .execute()
     )
 
+    if q:
+        query = query.ilike("name", f"%{q}%")
+
+    resp = query.execute()
     return resp.data
 
 
