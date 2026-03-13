@@ -126,18 +126,34 @@ def search_patients(
     if not profile.data or profile.data[0]["role"] != "doctor":
         raise HTTPException(status_code=403, detail="Doctors only")
 
+    # Get patient IDs who have granted access to this doctor
+    now_iso = datetime.now(timezone.utc).isoformat()
+    access_resp = (
+        user_supabase
+        .table("prescription_access")
+        .select("patient_id")
+        .eq("doctor_id", user_id)
+        .gte("expires_at", now_iso)
+        .execute()
+    )
+
+    if not access_resp.data:
+        return []
+
+    # Extract unique patient IDs
+    patient_ids = list(set([row["patient_id"] for row in access_resp.data]))
 
     resp = (
         user_supabase
         .table("profiles")
         .select("id, name")
         .eq("role", "patient")
+        .in_("id", patient_ids)
         .ilike("name", f"%{q}%")
         .execute()
     )
 
     return resp.data
-
 
 
 # -----------------------------

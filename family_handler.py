@@ -76,6 +76,9 @@ def add_family_member(
             .execute()
         )
         
+        if not response.data:
+            raise HTTPException(status_code=400, detail="Failed to update database. No rows were affected.")
+        
         return {"message": "Family member added successfully", "data": new_member}
     
     except HTTPException as e:
@@ -119,6 +122,9 @@ def remove_family_member(
             .execute()
         )
 
+        if not response.data:
+            raise HTTPException(status_code=400, detail="Failed to update database. No rows were affected.")
+
         return {"message": "Family member removed successfully"}
 
     except HTTPException as e:
@@ -151,6 +157,52 @@ def list_family_members(
             
         return {"data": family_members}
     
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/prescriptions/{member_id}")
+def get_family_member_prescriptions(
+    member_id: str,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    supabase = get_user_supabase(user["token"])
+    user_id = user["user_id"]
+
+    try:
+        # First verify the member_id is actually a family member
+        user_profile = (
+            supabase.table("profiles")
+            .select("family_members")
+            .eq("id", user_id)
+            .execute()
+        )
+
+        if not user_profile.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+
+        family_members = user_profile.data[0].get("family_members")
+        if not family_members:
+            family_members = []
+        
+        is_family_member = any(member.get("userid") == member_id for member in family_members)
+        
+        if not is_family_member:
+            raise HTTPException(status_code=403, detail="Not authorized to view this user's prescriptions")
+
+        # Now fetch prescriptions
+        prescriptions = (
+            supabase.table("prescriptions")
+            .select("*")
+            .eq("patient_id", member_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+
+        return {"data": prescriptions.data}
+
     except HTTPException as e:
         raise e
     except Exception as e:
